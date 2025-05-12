@@ -1,0 +1,12 @@
+{
+  "name": "multipong",
+  "version": "0.1.0",
+  "description": "A multiplayer pong clone with mobile accelerometer input",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "Florian lordcraymen Patzke",
+  "license": "None"
+}

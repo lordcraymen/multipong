@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Rundes Pong mit SVG</title>
+  <style>
+    body { margin: 0; overflow: hidden; background: #000; }
+    svg { display: block; width: 100vw; height: 100vh; }
+    path, circle, text { fill: none; stroke: #FFF; }
+    .paddle { stroke-width: 10; fill: none; }
+    .boundary { stroke-width: 2; fill: none; }
+    .ball { fill: #FFF; stroke: none; }
+    .score { fill: #FFF; font-size: 16px; text-anchor: middle; }
+  </style>
+</head>
+<body>
+<svg id="gameSvg" xmlns="http://www.w3.org/2000/svg"></svg>
+<script>
+// Haupt-Referenzen
+const svg = document.getElementById('gameSvg');
+let width, height, cx, cy, radius;
+
+// Spiel-Parameter
+const paddleCount = 2;
+const paddleAngularSize = Math.PI / 8;
+const paddleSpeed = Math.PI;     // Rad/Sekunde
+const paddleThickness = 10;      // px
+const ballRadius = 5;            // px
+const ballSpeed = 200;           // px/Sekunde
+
+// Steuerung
+const controls = [
+  { left: 'ArrowLeft', right: 'ArrowRight' },
+  { left: 'a',       right: 'd' }
+];
+
+// Spielfeld-Grafik
+const boundary = document.createElementNS(svg.namespaceURI, 'circle');
+boundary.classList.add('boundary');
+svg.appendChild(boundary);
+
+// Paddles
+const paddles = [];
+for (let i = 0; i < paddleCount; i++) {
+  const path = document.createElementNS(svg.namespaceURI, 'path');
+  path.classList.add('paddle');
+  svg.appendChild(path);
+  paddles.push({
+    angle: (2 * Math.PI / paddleCount) * i,
+    dir: 0,
+    element: path,
+    leftKey: controls[i].left,
+    rightKey: controls[i].right
+  });
+}
+
+// Ball
+const ball = document.createElementNS(svg.namespaceURI, 'circle');
+ball.classList.add('ball');
+ball.setAttribute('r', ballRadius);
+svg.appendChild(ball);
+
+// Punkteanzeige
+const scores = Array(paddleCount).fill(0);
+const scoreText = [];
+for (let i = 0; i < paddleCount; i++) {
+  const txt = document.createElementNS(svg.namespaceURI, 'text');
+  txt.classList.add('score');
+  txt.textContent = scores[i];
+  svg.appendChild(txt);
+  scoreText.push(txt);
+}
+let lastTouch = null;
+
+// Eingabe-Handler
+window.addEventListener('keydown', e => {
+  paddles.forEach(p => {
+    if (e.key === p.leftKey)  p.dir = -1;
+    if (e.key === p.rightKey) p.dir = 1;
+  });
+});
+window.addEventListener('keyup', e => {
+  paddles.forEach(p => {
+    if (e.key === p.leftKey || e.key === p.rightKey) p.dir = 0;
+  });
+});
+
+// Hilfsfunktionen
+function randomVelocity() {
+  const a = Math.random() * 2 * Math.PI;
+  return { x: ballSpeed * Math.cos(a), y: ballSpeed * Math.sin(a) };
+}
+function polarToCartesian(cx, cy, r, angle) {
+  return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+}
+function arcPath(cx, cy, r, startAngle, endAngle) {
+  const start = polarToCartesian(cx, cy, r, endAngle);
+  const end   = polarToCartesian(cx, cy, r, startAngle);
+  const largeArc = (endAngle - startAngle) <= Math.PI ? 0 : 1;
+  return [`M`, start.x, start.y, `A`, r, r, 0, largeArc, 0, end.x, end.y].join(' ');
+}
+
+// Ball-Zustand
+let ballState = { x: 0, y: 0, vel: randomVelocity() };
+
+// Fenster anpassen und initialisieren
+function resize() {
+  width = window.innerWidth;
+  height = window.innerHeight;
+  svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
+  cx = width / 2;
+  cy = height / 2;
+  radius = Math.min(width, height) * 0.4;
+
+  // Spielfeld-Rand
+  boundary.setAttribute('cx', cx);
+  boundary.setAttribute('cy', cy);
+  boundary.setAttribute('r',  radius);
+
+  // Ball in Mitte
+  ballState.x = cx;
+  ballState.y = cy;
+  ball.setAttribute('cx', cx);
+  ball.setAttribute('cy', cy);
+
+  // Score-Positionen (zwei Spieler)
+  scoreText[0].setAttribute('x', cx - radius / 2);
+  scoreText[0].setAttribute('y', cy - radius - 20);
+  scoreText[1].setAttribute('x', cx + radius / 2);
+  scoreText[1].setAttribute('y', cy - radius - 20);
+}
+window.addEventListener('resize', resize);
+
+// Spiel-Logik
+function update(dt) {
+  // Paddles drehen
+  paddles.forEach(p => {
+    p.angle = (p.angle + p.dir * paddleSpeed * dt + 2 * Math.PI) % (2 * Math.PI);
+  });
+
+  // Paddles untereinander kollidieren (unelastisch)
+  for (let i = 0; i < paddles.length; i++) {
+    for (let j = i + 1; j < paddles.length; j++) {
+      const p = paddles[i], q = paddles[j];
+      const raw = p.angle - q.angle;
+      const diff = ((raw + Math.PI * 3) % (2 * Math.PI)) - Math.PI;
+      const sep  = Math.abs(diff);
+      const overlap = paddleAngularSize - sep;
+      if (overlap > 0) {
+        const sign = diff / sep;
+        p.angle = (p.angle + sign * overlap / 2 + 2 * Math.PI) % (2 * Math.PI);
+        q.angle = (q.angle - sign * overlap / 2 + 2 * Math.PI) % (2 * Math.PI);
+      }
+    }
+  }
+
+  // Paddle-Grafik
+  paddles.forEach(p => {
+    const start = p.angle - paddleAngularSize / 2;
+    const end   = p.angle + paddleAngularSize / 2;
+    p.element.setAttribute('d', arcPath(cx, cy, radius, start, end));
+  });
+
+  // Ball bewegen
+  ballState.x += ballState.vel.x * dt;
+  ballState.y += ballState.vel.y * dt;
+  ball.setAttribute('cx', ballState.x);
+  ball.setAttribute('cy', ballState.y);
+
+  // Kollision mit Paddle und Scoring
+  const dx = ballState.x - cx;
+  const dy = ballState.y - cy;
+  const dist = Math.hypot(dx, dy);
+  let collided = false;
+
+  if (dist + ballRadius >= radius - paddleThickness / 2 && dist - ballRadius <= radius + paddleThickness / 2) {
+    const angle = Math.atan2(dy, dx);
+    paddles.forEach((p, i) => {
+      const raw  = angle - p.angle;
+      const diff = ((raw + Math.PI * 3) % (2 * Math.PI)) - Math.PI;
+      if (Math.abs(diff) <= paddleAngularSize / 2) {
+        const nx = dx / dist;
+        const ny = dy / dist;
+        const dot = ballState.vel.x * nx + ballState.vel.y * ny;
+        ballState.vel.x -= 2 * dot * nx;
+        ballState.vel.y -= 2 * dot * ny;
+        collided = true;
+        scores[i]++;
+        scoreText[i].textContent = scores[i];
+        lastTouch = i;
+      }
+    });
+  }
+
+  // Ball aus dem Kreis, falls keine Kollision
+  if (!collided && dist - ballRadius > radius) {
+    if (lastTouch !== null) {
+      scores[lastTouch]++;
+      scoreText[lastTouch].textContent = scores[lastTouch];
+      lastTouch = null;
+    }
+    ballState.vel = randomVelocity();
+    ballState.x = cx;
+    ballState.y = cy;
+  }
+}
+
+// Game Loop
+let last = performance.now();
+function loop(ts) {
+  const dt = (ts - last) / 1000;
+  last = ts;
+  update(dt);
+  requestAnimationFrame(loop);
+}
+
+// Start
+resize();
+requestAnimationFrame(loop);
+</script>
+</body>
+</html>
